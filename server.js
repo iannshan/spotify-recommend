@@ -19,11 +19,43 @@ var getFromApi = function(endpoint, args) {
 };
 
 var getRelated = function(artistId) {
-	return new Promise(function(resolve) {
+	return new Promise(function(resolve, reject) {
 		var searchRelated = getFromApi('artists/' + artistId + '/related-artists');
 
 		searchRelated.on('end', function(item) {
 			resolve(item);
+		});
+
+		searchRelated.on('error', function(code) {
+			reject(code);
+		});
+	});
+};
+
+var getTracks = function(relatedArtists) {
+	return new Promise(function(resolve, reject) {
+		var completed = 0;
+
+		var checkComplete = function() {
+			if (completed === relatedArtists.length) {
+				resolve(relatedArtists);
+			}
+		};
+
+		relatedArtists.forEach(function(artist) {
+
+			var searchTopTrack = getFromApi('artists/' + artist.id + '/top-tracks', {country: 'US'});
+
+			searchTopTrack.on('end', function(item) {
+				artist.tracks = item.tracks;
+				completed += 1;
+				checkComplete();
+			});
+
+			searchTopTrack.on('error', function(code) {
+				console.log(code);
+				reject(code);
+			});
 		});
 	});
 };
@@ -44,7 +76,14 @@ app.get('/search/:name', function(req, res) {
 			getRelated(artist.id)
 				.then(function(item) {
 				artist.related = item.artists;
-				res.json(artist);
+				getTracks(artist.related)
+					.then(function(relatedArtists) {
+						artist.related = relatedArtists;
+						res.json(artist);
+					})
+					.catch(function(code) {
+						res.sendStatus(code);
+					});
 				})
 				.catch(function(code) {
 					res.sendStatus(code);
